@@ -1,6 +1,6 @@
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
-from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors import ContactSensorCfg, FrameTransformerCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_hiveboard.assets import FRANKA_EE, FRANKA_FR3_HIGH_PD_CFG, FRANKA_WORKSPACE, make_ee_frame
@@ -29,10 +29,12 @@ class FrankaLampSceneCfg(LampSceneCfg):
         ),
     )
     ee_frame: FrameTransformerCfg = make_ee_frame(FRANKA_EE)
-    # The shared lamp scene defines Spot-only contact sensors.  Franka uses
-    # different link names and this task does not consume contact readings.
-    finger_contact = None
-    jaw_contact = None
+    finger_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/fr3_leftfinger",
+        update_period=0.0,
+        filter_prim_paths_expr=["{ENV_REGEX_NS}/Lamp/Geometry/World/rotation_pivot/lamp_pivot"],
+    )
+    jaw_contact = finger_contact.replace(prim_path="{ENV_REGEX_NS}/Robot/fr3_rightfinger")
 
     def __post_init__(self):
         self.lamp.init_state.pos = FRANKA_WORKSPACE.object_pos

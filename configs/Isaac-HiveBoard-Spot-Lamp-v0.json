@@ -7,7 +7,7 @@
     "pos": [
       0.21,
       0.0,
-      -0.01
+      -0.006
     ],
     "rot": [
       0.0,
@@ -18,7 +18,7 @@
   },
   "commands": [
     {
-      "type": "CuroboPlannedGoToFrameCfg",
+      "type": "GoToFrameCfg",
       "parameters": {
         "phase": null,
         "until": null,
@@ -46,34 +46,11 @@
         "done_when_joint": null,
         "done_when_travel": null,
         "canonicalize_upward": false,
-        "hold_current_orientation": false,
-        "robot_joint_names": [
-          "arm_sh0",
-          "arm_sh1",
-          "arm_el0",
-          "arm_el1",
-          "arm_wr0",
-          "arm_wr1"
-        ],
-        "robot_curobo_yaml": "/home/gonzales/Documents/repositories/isaaclab-hiveboard/source/isaaclab_hiveboard/isaaclab_hiveboard/assets/spot/cumotion/spot_arm.yaml",
-        "robot_urdf": "/home/gonzales/Documents/repositories/isaaclab-hiveboard/source/isaaclab_hiveboard/isaaclab_hiveboard/assets/spot/spot_with_arm.urdf",
-        "num_ik_seeds": 4,
-        "num_trajopt_seeds": 1,
-        "max_plan_attempts": 1,
-        "interpolation_buffer_size": 128,
-        "plan_batch_size": 1,
-        "reference_pos_env": null,
-        "reference_quat_xyzw": null,
-        "chain_with_next": false,
-        "chain_blend_s": 0.4,
-        "chain_max_joint_step": 0.15,
-        "chain_max_pose_error_m": 0.01,
-        "wrist_flip_joints": null,
-        "wrist_flip_margin": 0.05
+        "hold_current_orientation": false
       }
     },
     {
-      "type": "CuroboPlannedGoToFrameCfg",
+      "type": "GoToFrameCfg",
       "parameters": {
         "phase": null,
         "until": null,
@@ -81,8 +58,8 @@
         "target_frame_name": "lamp_grasp",
         "target_offset_pos": [
           0.0,
-          -2.465190328815662e-32,
-          -0.004570960998535156
+          0.0,
+          0.0
         ],
         "target_offset_rot": [
           0.0,
@@ -101,30 +78,595 @@
         "done_when_joint": null,
         "done_when_travel": null,
         "canonicalize_upward": true,
-        "hold_current_orientation": true,
-        "robot_joint_names": [
-          "arm_sh0",
-          "arm_sh1",
-          "arm_el0",
-          "arm_el1",
-          "arm_wr0",
-          "arm_wr1"
+        "hold_current_orientation": true
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": false,
+        "duration_s": 0.75
+      }
+    },
+    {
+      "type": "ScrewFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
         ],
-        "robot_curobo_yaml": "/home/gonzales/Documents/repositories/isaaclab-hiveboard/source/isaaclab_hiveboard/isaaclab_hiveboard/assets/spot/cumotion/spot_arm.yaml",
-        "robot_urdf": "/home/gonzales/Documents/repositories/isaaclab-hiveboard/source/isaaclab_hiveboard/isaaclab_hiveboard/assets/spot/spot_with_arm.urdf",
-        "num_ik_seeds": 4,
-        "num_trajopt_seeds": 1,
-        "max_plan_attempts": 1,
-        "interpolation_buffer_size": 128,
-        "plan_batch_size": 1,
-        "reference_pos_env": null,
-        "reference_quat_xyzw": null,
-        "chain_with_next": false,
-        "chain_blend_s": 0.4,
-        "chain_max_joint_step": 0.15,
-        "chain_max_pose_error_m": 0.01,
-        "wrist_flip_joints": null,
-        "wrist_flip_margin": 0.05
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": 180.0,
+        "use_valve_angle": true,
+        "angular_velocity": 1.5,
+        "gripper_open": false,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "axial_distance": 0.0032000000000000006
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": true,
+        "duration_s": 0.5
+      }
+    },
+    {
+      "type": "RotateFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": -180.0,
+        "use_valve_angle": false,
+        "angular_velocity": 1.5,
+        "gripper_open": true,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "rotate_in_place": true
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": false,
+        "duration_s": 0.75
+      }
+    },
+    {
+      "type": "ScrewFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": 180.0,
+        "use_valve_angle": true,
+        "angular_velocity": 1.5,
+        "gripper_open": false,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "axial_distance": 0.0032000000000000006
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": true,
+        "duration_s": 0.5
+      }
+    },
+    {
+      "type": "RotateFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": -180.0,
+        "use_valve_angle": false,
+        "angular_velocity": 1.5,
+        "gripper_open": true,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "rotate_in_place": true
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": false,
+        "duration_s": 0.75
+      }
+    },
+    {
+      "type": "ScrewFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": 180.0,
+        "use_valve_angle": true,
+        "angular_velocity": 1.5,
+        "gripper_open": false,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "axial_distance": 0.0032000000000000006
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": true,
+        "duration_s": 0.5
+      }
+    },
+    {
+      "type": "RotateFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": -180.0,
+        "use_valve_angle": false,
+        "angular_velocity": 1.5,
+        "gripper_open": true,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "rotate_in_place": true
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": false,
+        "duration_s": 0.75
+      }
+    },
+    {
+      "type": "ScrewFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": 180.0,
+        "use_valve_angle": true,
+        "angular_velocity": 1.5,
+        "gripper_open": false,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "axial_distance": 0.0032000000000000006
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": true,
+        "duration_s": 0.5
+      }
+    },
+    {
+      "type": "RotateFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": -180.0,
+        "use_valve_angle": false,
+        "angular_velocity": 1.5,
+        "gripper_open": true,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "rotate_in_place": true
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": false,
+        "duration_s": 0.75
+      }
+    },
+    {
+      "type": "ScrewFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": 180.0,
+        "use_valve_angle": true,
+        "angular_velocity": 1.5,
+        "gripper_open": false,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "axial_distance": 0.0032000000000000006
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": true,
+        "duration_s": 0.5
+      }
+    },
+    {
+      "type": "RotateFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": -180.0,
+        "use_valve_angle": false,
+        "angular_velocity": 1.5,
+        "gripper_open": true,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "rotate_in_place": true
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": false,
+        "duration_s": 0.75
+      }
+    },
+    {
+      "type": "ScrewFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": 180.0,
+        "use_valve_angle": true,
+        "angular_velocity": 1.5,
+        "gripper_open": false,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "axial_distance": 0.0032000000000000006
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": true,
+        "duration_s": 0.5
+      }
+    },
+    {
+      "type": "RotateFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": -180.0,
+        "use_valve_angle": false,
+        "angular_velocity": 1.5,
+        "gripper_open": true,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "rotate_in_place": true
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": false,
+        "duration_s": 0.75
+      }
+    },
+    {
+      "type": "ScrewFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": 180.0,
+        "use_valve_angle": true,
+        "angular_velocity": 1.5,
+        "gripper_open": false,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "axial_distance": 0.0032000000000000006
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": true,
+        "duration_s": 0.5
+      }
+    },
+    {
+      "type": "RotateFrameCfg",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "frame_name": "target_frame",
+        "target_frame_name": "screw_frame",
+        "target_offset_pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target_offset_rot": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "axis": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "angle_deg": -180.0,
+        "use_valve_angle": false,
+        "angular_velocity": 1.5,
+        "gripper_open": true,
+        "angle_threshold_deg": 2.0,
+        "max_ee_rotation_deg": 0.0,
+        "axis_position_override_b": null,
+        "rotate_in_place": true
       }
     },
     {
@@ -166,20 +708,11 @@
         "angle_threshold_deg": 2.0,
         "max_ee_rotation_deg": 0.0,
         "axis_position_override_b": null,
-        "axial_distance": 0.0015
+        "axial_distance": 0.0016000000000000003
       }
     },
     {
-      "type": "GripperCommand",
-      "parameters": {
-        "phase": null,
-        "until": null,
-        "open_gripper": true,
-        "duration_s": 0.1
-      }
-    },
-    {
-      "type": "CuroboPlannedGoToFrameCfg",
+      "type": "GoToFrameCfg",
       "parameters": {
         "phase": null,
         "until": null,
@@ -198,7 +731,7 @@
         ],
         "target_position_env": null,
         "target_orientation_env": null,
-        "gripper_open": true,
+        "gripper_open": false,
         "velocity": 0.2,
         "angular_velocity": 1.0,
         "distance_threshold": 0.015,
@@ -206,31 +739,17 @@
         "valve_done_threshold_rad": null,
         "done_when_joint": null,
         "done_when_travel": null,
-        "canonicalize_upward": true,
-        "hold_current_orientation": true,
-        "robot_joint_names": [
-          "arm_sh0",
-          "arm_sh1",
-          "arm_el0",
-          "arm_el1",
-          "arm_wr0",
-          "arm_wr1"
-        ],
-        "robot_curobo_yaml": "/home/gonzales/Documents/repositories/isaaclab-hiveboard/source/isaaclab_hiveboard/isaaclab_hiveboard/assets/spot/cumotion/spot_arm.yaml",
-        "robot_urdf": "/home/gonzales/Documents/repositories/isaaclab-hiveboard/source/isaaclab_hiveboard/isaaclab_hiveboard/assets/spot/spot_with_arm.urdf",
-        "num_ik_seeds": 4,
-        "num_trajopt_seeds": 1,
-        "max_plan_attempts": 1,
-        "interpolation_buffer_size": 128,
-        "plan_batch_size": 1,
-        "reference_pos_env": null,
-        "reference_quat_xyzw": null,
-        "chain_with_next": false,
-        "chain_blend_s": 0.4,
-        "chain_max_joint_step": 0.15,
-        "chain_max_pose_error_m": 0.01,
-        "wrist_flip_joints": null,
-        "wrist_flip_margin": 0.05
+        "canonicalize_upward": false,
+        "hold_current_orientation": true
+      }
+    },
+    {
+      "type": "GripperCommand",
+      "parameters": {
+        "phase": null,
+        "until": null,
+        "open_gripper": true,
+        "duration_s": 0.5
       }
     }
   ]

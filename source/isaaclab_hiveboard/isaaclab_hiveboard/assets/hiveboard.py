@@ -28,6 +28,7 @@ HIVEBOARD_SIM_DIR = os.path.join(HIVEBOARD_DIR, "Simulation")
 
 # HiveBoard Panel
 HONEYCOMB_USD = os.path.join(ASSET_DIR, "hiveboard", "honeycomb", "Honeycomb_Panel.usd")
+HONEYCOMB_COLLISION_USD = os.path.join(ASSET_DIR, "hiveboard", "honeycomb", "Honeycomb_Panel_Collision.usda")
 HONEYCOMB_URDF = os.path.join(HIVEBOARD_SIM_DIR, "Honeycomb", "Honeycomb_Panel.urdf")
 
 # HiveBoard Interactive Objects - Valves

@@ -16,7 +16,7 @@ from isaaclab_tasks.core.cabinet.cabinet_env_cfg import (  # isort: skip
     FRAME_MARKER_SMALL_CFG,
 )
 
-from isaaclab_hiveboard.assets import HONEYCOMB_USD
+from isaaclab_hiveboard.assets import HONEYCOMB_COLLISION_USD, HONEYCOMB_USD
 
 # Same placement as the circuit breaker: 1 m ahead of the legged robots'
 # shoulders, 0.65 m up, with a 180 deg yaw so the mechanism faces the robot.
@@ -72,14 +72,14 @@ def mechanism_spawn(usd_path: str, semantic_class: str) -> sim_utils.UsdFileCfg:
     )
 
 
-def honeycomb(root_link_prim: str, back_x: float) -> AssetBaseCfg:
-    """Visual-only honeycomb panel whose 20 mm face ends flush at back_x."""
+def honeycomb(root_link_prim: str, back_x: float, *, collision_enabled: bool = False) -> AssetBaseCfg:
+    """Honeycomb panel whose 20 mm face ends flush at back_x, with optional hollow-cell colliders."""
     return AssetBaseCfg(
         prim_path=f"{root_link_prim}/Honeycomb",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=HONEYCOMB_USD,
+            usd_path=HONEYCOMB_COLLISION_USD if collision_enabled else HONEYCOMB_USD,
             scale=(0.001, 0.001, 0.001),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=collision_enabled),
             semantic_tags=[("class", "honeycomb")],
         ),
         init_state=AssetBaseCfg.InitialStateCfg(pos=(back_x - 0.020, 0.0, 0.0), rot=(0.0, 0.0, 0.0, 1.0)),

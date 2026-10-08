@@ -250,7 +250,7 @@ class EditorCommandConfigTests(unittest.TestCase):
         cfg = FrankaLampEnvCfg()
         editor = CommandEditor.__new__(CommandEditor)
         editor.env, editor.task = NS(cfg=cfg), "franka-lamp-test"
-        editor.term = NS(cfg=cfg.commands.pose_command)
+        editor.term = NS(cfg=cfg.commands.pose_command, set_body_offset=Mock())
         editor.ik = NS()
         editor.offset_pos, editor.offset_rot = NS(), NS()
         editor._euler_degrees = Mock(return_value=(0.0, 0.0, 0.0))
@@ -317,7 +317,7 @@ class EditorStartupTests(unittest.TestCase):
                         )
                     ],
                 )
-                cfg = NS(commands=NS(pose_command=command_cfg), scene=NS(), sim=NS())
+                cfg = NS(commands=NS(pose_command=command_cfg), scene=NS(), sim=NS(physics=NS()))
                 base = NS(
                     command_manager=Mock(get_term=Mock(return_value=NS(cfg=command_cfg))),
                     scene=NS(sensors={}),
@@ -903,6 +903,8 @@ class ReplayPathTests(unittest.TestCase):
         handler._waypoint_pos_b = torch.tensor([[[0.0, 0, 0], [0.5, 0.4, 0.3], [1, 0, 0]]])
         handler._waypoint_quat_b = torch.tensor([[[0.0, 0, 0, 1]] * 3])
         handler._waypoint_index[0] = 3  # Completion sentinel stays within the marker array.
+        handler._waypoint_count[0] = 3
+        handler._planned[0] = True
         command = torch.tensor([[1.0, 0, 0, 0, 0, 0, 0, 1]])
         pos, quat, index = active_command_path(handler, command)
         self.assertEqual(index, 2)

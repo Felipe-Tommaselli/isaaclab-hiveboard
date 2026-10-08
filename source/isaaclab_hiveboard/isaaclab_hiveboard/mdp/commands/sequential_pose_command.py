@@ -370,6 +370,12 @@ class SequentialPoseCommand(CommandTerm):
             raise ValueError("Screw lower_limit must be less than upper_limit")
         if coupling.velocity_epsilon <= 0.0:
             raise ValueError("Screw velocity_epsilon must be positive")
+        if coupling.grasp_sensor_names:
+            if coupling.grasp_force_threshold <= 0.0 or coupling.grasp_timeout_s <= 0.0:
+                raise ValueError("Screw grasp force threshold and timeout must be positive")
+            for name in coupling.grasp_sensor_names:
+                if name not in self._env.scene.keys():
+                    raise ValueError(f"Screw grasp sensor '{name}' not found in the scene.")
 
         self._screw_asset = self._env.scene[coupling.asset_name]
         revolute_ids, _ = self._screw_asset.find_joints(coupling.revolute_joint_name)
@@ -583,6 +589,14 @@ class SequentialPoseCommand(CommandTerm):
     def is_done(self) -> torch.Tensor:
         """Check if all commands were finished."""
         return self._current_command_idx == len(self._command_handlers)
+
+    def screw_grasp_failed(self) -> torch.Tensor:
+        """An active screw segment has lost bulb contact for its configured timeout."""
+        failed = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        for index, handler in enumerate(self._command_handlers):
+            if isinstance(handler, _ScrewFrameHandler):
+                failed |= (self._current_command_idx == index) & handler.grasp_failed
+        return failed
 
     def get_curobo_joint_targets(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Return direct joint targets for environments executing a cuRobo term.
@@ -2443,6 +2457,9 @@ class _RotateFrameHandler(_BaseCmdHandler):
         self.initial_quat_b[env_ids] = ee_quat_b
 
         self.axis_pos_b[env_ids], axis_quat_b = self._get_rotation_axis_pose_b(env_ids)
+        if self.cfg.rotate_in_place:
+            # Keep the measured TCP fixed; the reference still supplies the axis.
+            self.axis_pos_b[env_ids] = ee_pos_b
 
         if self._command_term.cfg.debug_vis:
             print(
@@ -2580,9 +2597,13 @@ class _ScrewFrameHandler(_RotateFrameHandler):
         super().__init__(cfg, command_term)
         self.cfg: ScrewFrameCfg
         self._joint_start = torch.zeros(self._num_envs, device=self._device)
+        self._grasp_wait_s = torch.zeros(self._num_envs, device=self._device)
+        self.grasp_failed = torch.zeros(self._num_envs, device=self._device, dtype=torch.bool)
 
     def reset(self, env_ids: torch.Tensor):
         super().reset(env_ids)
+        self._grasp_wait_s[env_ids] = 0.0
+        self.grasp_failed[env_ids] = False
         command_term = self._command_term
         if command_term._screw_asset is not None and command_term._screw_revolute_idx is not None:
             self._joint_start[env_ids] = command_term._screw_asset.data.joint_pos.torch[
@@ -2603,24 +2624,58 @@ class _ScrewFrameHandler(_RotateFrameHandler):
 
     def update(self, env_mask: torch.Tensor) -> torch.Tensor:
         env_ids = torch.where(env_mask)[0]
+        coupling = self._command_term.cfg.screw_coupling
+        grasped = self._grasp_contact_mask(env_ids)
+        if coupling is not None and coupling.grasp_sensor_names:
+            self._grasp_wait_s[env_ids] = torch.where(grasped, 0.0, self._grasp_wait_s[env_ids] + self._dt)
+            self.grasp_failed[env_ids] |= self._grasp_wait_s[env_ids] >= coupling.grasp_timeout_s
+            grasped &= ~self.grasp_failed[env_ids]
         abs_angle = torch.abs(self.angle_rad_tensor[env_ids])
         self._progress_abs[env_ids] = torch.clamp(
-            self._progress_abs[env_ids] + self.cfg.angular_velocity * self._dt,
+            self._progress_abs[env_ids] + self.cfg.angular_velocity * self.speed_scale[env_ids] * self._dt * grasped,
             max=abs_angle,
         )
         angle = torch.copysign(self._progress_abs[env_ids], self.angle_rad_tensor[env_ids])
 
-        coupling = self._command_term.cfg.screw_coupling
         if coupling is not None and coupling.command_joint_angle_scale != 0.0:
-            self._command_term._screw_revolute_target[env_ids] = self._joint_start[env_ids] + angle * float(
-                coupling.command_joint_angle_scale
-            )
+            target = self._joint_start[env_ids] + angle * float(coupling.command_joint_angle_scale)
+            measured = self._command_term._screw_asset.data.joint_pos.torch[
+                env_ids, self._command_term._screw_revolute_idx
+            ]
+            self._command_term._screw_revolute_target[env_ids] = torch.where(grasped, target, measured)
 
         v_rot = self._rodrigues_rotate(self.radius_vec[env_ids], self.rot_axis_b[env_ids], angle)
         target_pos_b = self.axis_pos_b[env_ids] + self.axial_vec[env_ids] + v_rot + self._axial_offset(env_ids, angle)
         delta_q = math_utils.quat_from_angle_axis(angle, self.rot_axis_b[env_ids])
         target_quat_b = math_utils.quat_mul(delta_q, self.initial_quat_b[env_ids])
         return self._pack_command(self.cfg.gripper_open, target_pos_b, target_quat_b)
+
+    def _grasp_contact_mask(self, env_ids: torch.Tensor) -> torch.Tensor:
+        """Require bulb-filtered contact on every configured finger, per environment."""
+        grasped = torch.ones(len(env_ids), device=self._device, dtype=torch.bool)
+        coupling = self._command_term.cfg.screw_coupling
+        if coupling is None:
+            return grasped
+        for name in coupling.grasp_sensor_names:
+            forces = self._command_term._env.scene[name].data.force_matrix_w
+            if forces is None:
+                raise RuntimeError(f"Screw grasp sensor '{name}' needs a bulb contact filter.")
+            forces = forces.torch if hasattr(forces, "torch") else forces
+            norms = torch.linalg.vector_norm(forces[env_ids].reshape(len(env_ids), -1, 3), dim=-1)
+            grasped &= torch.any(norms >= coupling.grasp_force_threshold, dim=-1)
+        return grasped
+
+    def is_done(self, env_ids: torch.Tensor) -> torch.Tensor:
+        done = super().is_done(env_ids) & ~self.grasp_failed[env_ids]
+        coupling = self._command_term.cfg.screw_coupling
+        if coupling is not None and coupling.grasp_sensor_names and coupling.command_joint_angle_scale != 0.0:
+            # Finishing the TCP arc alone does not prove the mechanism followed it.
+            target = self._joint_start[env_ids] + self.angle_rad_tensor[env_ids] * coupling.command_joint_angle_scale
+            measured = self._command_term._screw_asset.data.joint_pos.torch[
+                env_ids, self._command_term._screw_revolute_idx
+            ]
+            done &= torch.abs(target - measured) <= self._angle_threshold_rad
+        return done
 
 
 class _CuroboPlannedRotateFrameHandler(_CuroboPlannedGoToFrameHandler, _RotateFrameHandler):
@@ -3568,6 +3623,12 @@ class ScrewJointCouplingCfg:
     prismatic_joint_name: str = "PrismaticJoint"
     pitch_m_per_revolution: float = 0.006
     command_joint_angle_scale: float = 0.0
+    grasp_sensor_names: tuple[str, ...] = ()
+    """Bulb-filtered finger sensors required to advance a driven screw. Empty disables gating."""
+    grasp_force_threshold: float = 0.1
+    """Minimum force [N] on each configured finger."""
+    grasp_timeout_s: float = 2.0
+    """Continuous time without both contacts before the screw segment fails."""
     lower_limit: float = 0.0
     upper_limit: float = 0.024
     viscous_friction: float = 2.0
@@ -3907,6 +3968,8 @@ class RotateFrameCfg(BaseCmd):
     """Clamp |arc| to this many degrees. ``0`` leaves the commanded angle unchanged."""
     axis_position_override_b: tuple[float | None, float | None, float | None] | None = None
     """Optional per-axis rotation-center overrides in the robot base frame."""
+    rotate_in_place: bool = False
+    """Rotate about the measured TCP, using the reference frame only for the axis."""
 
 
 @configclass

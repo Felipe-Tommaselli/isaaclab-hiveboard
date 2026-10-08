@@ -135,6 +135,11 @@ def screw_travel_success(
     return command.is_done() & (asset.data.joint_pos.torch[:, joint_ids[0]] <= goal + tolerance)
 
 
+def screw_grasp_failed(env: ManagerBasedRLEnv, command_name: str = "pose_command") -> torch.Tensor:
+    """End a screw attempt whose fingers failed to maintain contact with the bulb."""
+    return env.command_manager.get_term(command_name).screw_grasp_failed()
+
+
 def articulation_joint_ranges_success(
     env: ManagerBasedRLEnv,
     command_name: str,

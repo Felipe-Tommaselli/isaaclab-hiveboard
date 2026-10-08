@@ -3,7 +3,7 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.core.cabinet import mdp
 
-from isaaclab_hiveboard.mdp.terminations import command_done_term, screw_travel_success
+from isaaclab_hiveboard.mdp.terminations import command_done_term, screw_grasp_failed, screw_travel_success
 
 
 @configclass
@@ -12,8 +12,9 @@ class TerminationsCfg:
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     command_done = command_done_term()
+    grasp_failed = DoneTerm(func=screw_grasp_failed)
     success = DoneTerm(
         func=screw_travel_success,
-        # A third of a quarter turn at the 6 mm/revolution pitch.
+        # Allow 0.5 mm of solver compliance at the seated position.
         params={"command_name": "pose_command", "tolerance": 0.0005},
     )

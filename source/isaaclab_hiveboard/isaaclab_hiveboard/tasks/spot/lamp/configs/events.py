@@ -5,7 +5,7 @@ from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.configclass import configclass
 
-from isaaclab_hiveboard.mdp.events import apply_articulation_gravcomp
+from isaaclab_hiveboard.mdp.events import apply_articulation_gravcomp, set_mimic_constraint_stiffness
 
 
 @configclass
@@ -19,6 +19,15 @@ class LampEventCfg:
         func=apply_articulation_gravcomp,
         mode="startup",
         params={"asset_cfg": SceneEntityCfg("lamp"), "gravcomp": 1.0},
+    )
+    screw_constraint = EventTerm(
+        func=set_mimic_constraint_stiffness,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("lamp"),
+            "solref": (0.01, 1.0),
+            "solimp": (0.95, 0.999, 0.001),
+        },
     )
     reset_all = EventTerm(
         func=mdp.reset_scene_to_default,

@@ -4,9 +4,11 @@ from isaaclab.controllers import DifferentialIKControllerCfg
 from isaaclab.envs.mdp.actions.actions_cfg import BinaryJointPositionActionCfg, DifferentialInverseKinematicsActionCfg
 from isaaclab.utils.configclass import configclass
 
-from isaaclab_hiveboard.assets import SPOT_EE, as_ik_offset
+from isaaclab_hiveboard.assets import as_ik_offset
 from isaaclab_hiveboard.assets.spot.constants import ARM_JOINT_NAMES
 from isaaclab_hiveboard.mdp.pose_actions import OffsetDifferentialIKAction
+
+from .scene import SPOT_LAMP_EE
 
 
 @configclass
@@ -15,9 +17,9 @@ class SpotLampActionCfg:
         class_type=OffsetDifferentialIKAction,
         asset_name="robot",
         joint_names=list(ARM_JOINT_NAMES[:-1]),
-        body_name=SPOT_EE.body_name,
+        body_name=SPOT_LAMP_EE.body_name,
         controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls"),
-        body_offset=as_ik_offset(SPOT_EE),
+        body_offset=as_ik_offset(SPOT_LAMP_EE),
         scale=1.0,
     )
     gripper_action = BinaryJointPositionActionCfg(

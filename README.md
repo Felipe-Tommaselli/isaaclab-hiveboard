@@ -59,7 +59,7 @@ have one yet.
 | `M8Thread` / `M30Thread` | ✗ | ✓ | ✓ |
 | `PegInsertion` | ✗ | ✗ | ✗ |
 | `ShockAbsorber` | ✗ | ✗ | ✗ |
-| `Lamp` | ✓ | ✓ | ✓ |
+| `Lamp` (full seating verified) | ✓ | ✓ | ✓ |
 
 List everything registered:
 
@@ -108,6 +108,24 @@ Lamp tasks need their asset generated first:
 uv run python scripts/generate_newton_usd.py --assets lamp
 uv run python scripts/play.py --task Isaac-HiveBoard-Franka-Lamp-v0 physics=newton_mjwarp --visualizer newton
 ```
+
+Lamp defaults and saved setups seat the bulb through seven 180-degree turns and
+a final 90-degree turn (7.5 half-turns). The simulated pitch is calibrated to
+6.4 mm/revolution over the 24 mm seating travel. Between turns, the claw opens,
+the wrist resets in place at the bulb, and the claw closes for the next turn.
+The arm retreats only after the final turn. ANYmal opens its claw before that
+retreat; Spot and Franka retreat before the final opening. Both fingers
+must contact the bulb to advance each turn; two seconds without contact ends
+the attempt as a failed grasp. The generated honeycomb panel has hollow-cell
+colliders. Spot starts with its arm forward and uses a bulb-sized TCP. Both saved
+setups use direct pose commands for approach and retreat.
+Regenerate just the panel colliders with
+`uv run python scripts/generate_honeycomb_collisions.py`.
+
+Check full seating with `uv run python scripts/check_lamp_physics.py --visualizer none`.
+Add `--no-grasp` to verify that an open gripper cannot advance the bulb, or
+`--task Isaac-HiveBoard-Spot-Lamp-Play-v0` / `--task Isaac-HiveBoard-Anymal-Lamp-Play-v0`
+to check the other robots. `uv run python scripts/test_lamp.py` runs the CPU regressions.
 
 ### Record every task
 

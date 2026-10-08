@@ -7,6 +7,7 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_hiveboard.assets import ANYMAL_EE, ANYMAL_WORKSPACE, as_command_offset
 from isaaclab_hiveboard.tasks.spot.lamp.configs.commands import FramePoseCommandsCfg as LampCommandsCfg
+from isaaclab_hiveboard.tasks.spot.lamp.configs.commands import lamp_commands
 
 
 @configclass
@@ -14,6 +15,7 @@ class FramePoseCommandsCfg(LampCommandsCfg):
     """Seat the lamp with ANYmal + DynaArm using the shared sequence and TCP pose IK."""
 
     def __post_init__(self):
+        self.pose_command.commands = lamp_commands(open_before_retreat=True)
         self.pose_command.body_name = ANYMAL_EE.body_name
         self.pose_command.body_offset = as_command_offset(ANYMAL_EE)
         # ANYmal's base is raised on its legs; the lamp sits at ANYMAL_WORKSPACE

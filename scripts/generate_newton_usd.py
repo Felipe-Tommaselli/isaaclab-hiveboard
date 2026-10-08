@@ -906,6 +906,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_conversion:
         if want_lamp:
             run_uuc_conversion(LAMP_URDF, LAMP_UUC_DIR, args.uuc_python)
+            from generate_honeycomb_collisions import generate as generate_honeycomb_collisions
+
+            generate_honeycomb_collisions()
             print(f"[UUC] lamp: {LAMP_UUC_DIR / 'Lamp_Assembly.usda'}")
         if want_button:
             run_uuc_conversion(BUTTON_URDF, BUTTON_UUC_DIR, args.uuc_python)

@@ -50,6 +50,7 @@ _EXPORT_MODULES = {
     "HIVEBOARD_SIM_DIR": ".hiveboard",
     "HONEYCOMB_URDF": ".hiveboard",
     "HONEYCOMB_USD": ".hiveboard",
+    "HONEYCOMB_COLLISION_USD": ".hiveboard",
     "KEY_URDF": ".hiveboard",
     "KEY_USD": ".hiveboard",
     "KEY_NEWTON_USD": ".hiveboard",

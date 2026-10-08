@@ -31,14 +31,14 @@ class LampPhysicsCfg(PresetCfg):
             nconmax=4000,
         ),
         num_substeps=2,
-        use_cuda_graph=False,
+        use_cuda_graph=True,
     )
     default = newton_mjwarp
 
 
 @configclass
 class SpotLampEnvCfg(ManagerBasedRLEnvCfg):
-    """Seat the lamp with sixteen quarter turns and wrist unwinds."""
+    """Seat the lamp with 7.5 half-turns, contact-verified grasps and wrist resets in place."""
 
     scene: LampSceneCfg = LampSceneCfg(num_envs=1, env_spacing=3.0)
     observations: ObservationsCfg = ObservationsCfg()
@@ -52,7 +52,7 @@ class SpotLampEnvCfg(ManagerBasedRLEnvCfg):
 
     def __post_init__(self):
         self.decimation = 15
-        self.episode_length_s = 10.0
+        self.episode_length_s = 150.0
         self.viewer.origin_type = "asset_body"
         self.viewer.asset_name = "lamp"
         self.viewer.body_name = "lamp_pivot"
