@@ -23,10 +23,6 @@ class RateLimitedBinaryJointPositionAction(BinaryJointPositionAction):
     so the PD drive slams the fingers into the part at full effort. Here the
     target advances by at most ``speed * dt`` per call, and the drive only ever
     sees a small tracking error.
-
-    Isaac Lab calls ``apply_actions`` once per physics step, except when the
-    physics backend runs the decimation loop itself (Newton): then it is called
-    once per env step, and ``dt`` is the env step.
     """
 
     cfg: RateLimitedBinaryJointPositionActionCfg
@@ -56,9 +52,7 @@ class RateLimitedBinaryJointPositionAction(BinaryJointPositionAction):
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         super().reset(env_ids)
         ids = slice(None) if env_ids is None else env_ids
-        # Start from where the fingers are: open after a normal reset, closed
-        # when an episode starts mid-grasp. The action manager resets after
-        # the reset events, so the measured joints hold the reset state.
+        # Start from where the fingers are
         self._target[ids] = self._asset.data.joint_pos.torch[ids][:, self._measured_ids]
 
 
