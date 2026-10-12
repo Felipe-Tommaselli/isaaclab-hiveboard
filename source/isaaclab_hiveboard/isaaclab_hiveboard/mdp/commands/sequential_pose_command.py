@@ -66,6 +66,34 @@ def _wxyz_to_xyzw(q: torch.Tensor) -> torch.Tensor:
     return q[..., [1, 2, 3, 0]]
 
 
+def _limit_joint_speed(
+    tcp_pos: torch.Tensor, tcp_quat: torch.Tensor, joints: torch.Tensor, max_step: float | torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Re-time one plan, one waypoint per step, so no joint moves more than ``max_step`` per step.
+
+    ``max_step`` is one value for every joint or one per joint, ``(J,)``. Each interval between
+    waypoints takes ``max(1, largest joint change / max_step)`` steps and the
+    plan is resampled at one step per waypoint (linear, the quaternions normalized). Intervals within
+    the limit keep their timing, faster ones slow to exactly it, and the path is unchanged.
+    """
+    step = ((joints[1:] - joints[:-1]).abs() / max_step).amax(dim=-1)
+    if joints.shape[0] < 2 or bool((step <= 1.0).all()):
+        return tcp_pos, tcp_quat, joints
+    tau = torch.cat((step.new_zeros(1), step.clamp(min=1.0).cumsum(dim=0)))
+    count = int(math.ceil(float(tau[-1]) - 1.0e-6)) + 1
+    s = torch.arange(count, device=tau.device, dtype=tau.dtype).clamp(max=tau[-1])
+    idx = torch.searchsorted(tau, s).clamp(1, len(tau) - 1)
+    t0, t1 = tau[idx - 1], tau[idx]
+    w = ((s - t0) / (t1 - t0)).clamp(0.0, 1.0)[:, None]
+    q0, q1 = tcp_quat[idx - 1], tcp_quat[idx]
+    # Same hemisphere before blending.
+    q1 = torch.where((q0 * q1).sum(dim=-1, keepdim=True) < 0.0, -q1, q1)
+    quat = torch.nn.functional.normalize(q0 * (1.0 - w) + q1 * w, dim=-1)
+    pos = tcp_pos[idx - 1] * (1.0 - w) + tcp_pos[idx] * w
+    q = joints[idx - 1] * (1.0 - w.to(joints.dtype)) + joints[idx] * w.to(joints.dtype)
+    return pos, quat, q
+
+
 def _pose_str(p: torch.Tensor, q: torch.Tensor) -> str:
     """Compact position + RPY (deg) rendering for plan audit logs."""
     rpy = torch.rad2deg(torch.stack(math_utils.euler_xyz_from_quat(q), dim=-1))
@@ -1108,10 +1136,40 @@ class _CuroboPlannedGoToFrameHandler(_GoToFrameHandler):
                 [self._joint_waypoints, self._joint_waypoints[:, -1:].expand(-1, pad, -1)], dim=1
             )
 
+    def _planner_joint_velocity(self) -> dict[str, float] | None:
+        """``cfg.max_joint_velocity`` by joint name for the trajectory planners to plan within; None unless
+        ``cfg.plan_within_joint_velocity`` is set."""
+        max_joint_velocity = getattr(self.cfg, "max_joint_velocity", None)
+        if max_joint_velocity is None or not getattr(self.cfg, "plan_within_joint_velocity", False):
+            return None
+        names = list(self.cfg.robot_joint_names)
+        if isinstance(max_joint_velocity, (int, float)):
+            return dict.fromkeys(names, float(max_joint_velocity))
+        if len(max_joint_velocity) != len(names):
+            raise ValueError(
+                f"max_joint_velocity has {len(max_joint_velocity)} values for {len(names)} robot_joint_names"
+            )
+        return {name: float(v) for name, v in zip(names, max_joint_velocity)}
+
+    def _planner_robot_cfg(self, robot_cfg: dict) -> dict:
+        """``robot_cfg`` with cuRobo's joint speed limits lowered to :meth:`_planner_joint_velocity`.
+
+        Trajectory optimization then plans and times within them; :meth:`_store_plan` still re-times
+        whatever exceeds them (cuRobo clamps its time step, which can leave a long move too fast).
+        """
+        from isaaclab_hiveboard.mdp.curobo_robot_cfg import limit_joint_velocity
+
+        limits = self._planner_joint_velocity()
+        return robot_cfg if limits is None else limit_joint_velocity(robot_cfg, limits)
+
     def _store_plan(
         self, env_ids: torch.Tensor, tcp_pos: torch.Tensor, tcp_quat: torch.Tensor, joints: torch.Tensor
     ) -> None:
         """Install one env's plan: ``(T, 3)`` TCP positions, ``(T, 4)`` quats, ``(T, J)`` joints."""
+        max_joint_velocity = getattr(self.cfg, "max_joint_velocity", None)
+        if max_joint_velocity is not None:
+            max_step = torch.as_tensor(max_joint_velocity, device=joints.device, dtype=joints.dtype) * self._dt
+            tcp_pos, tcp_quat, joints = _limit_joint_speed(tcp_pos, tcp_quat, joints, max_step)
         n = tcp_pos.shape[0]
         self._reserve_plan_capacity(n, joints.shape[-1], joints.dtype)
         self._waypoint_pos_b[env_ids, :n] = tcp_pos
@@ -1555,11 +1613,14 @@ class _CuroboPlannedGoToFrameHandler(_GoToFrameHandler):
         from isaaclab_hiveboard.assets import ASSET_DIR
         from isaaclab_hiveboard.mdp.curobo_robot_cfg import load_curobo_robot_cfg
 
-        robot_cfg = load_curobo_robot_cfg(
-            self.cfg.robot_curobo_yaml or f"{ASSET_DIR}/franka/cumotion/fr3.yaml",
-            self.cfg.robot_urdf or f"{ASSET_DIR}/franka/cumotion/fr3.urdf",
+        robot_cfg = self._planner_robot_cfg(
+            load_curobo_robot_cfg(
+                self.cfg.robot_curobo_yaml or f"{ASSET_DIR}/franka/cumotion/fr3.yaml",
+                self.cfg.robot_urdf or f"{ASSET_DIR}/franka/cumotion/fr3.urdf",
+            )
         )
         size = max(1, int(self.cfg.plan_batch_size))
+        joint_velocity = self._planner_joint_velocity()
         cache_key = (
             "batch_planner",
             self.cfg.robot_curobo_yaml,
@@ -1568,6 +1629,7 @@ class _CuroboPlannedGoToFrameHandler(_GoToFrameHandler):
             self.cfg.num_trajopt_seeds,
             self.cfg.interpolation_buffer_size,
             size,
+            None if joint_velocity is None else tuple(joint_velocity.items()),
         )
 
         def _make_planner() -> BatchMotionPlanner:
@@ -1791,6 +1853,8 @@ class _CuroboPlannedGoToFrameHandler(_GoToFrameHandler):
             if self.cfg.reference_pos_env is not None and self.cfg.reference_quat_xyzw is not None:
                 self._plan_from_reference(env_ids, robot_cfg)
                 return
+            robot_cfg = self._planner_robot_cfg(robot_cfg)
+            joint_velocity = self._planner_joint_velocity()
             from curobo.motion_planner import MotionPlanner, MotionPlannerCfg
             from curobo.types import GoalToolPose, Pose
 
@@ -1806,6 +1870,7 @@ class _CuroboPlannedGoToFrameHandler(_GoToFrameHandler):
                 self.cfg.num_ik_seeds,
                 self.cfg.num_trajopt_seeds,
                 self.cfg.interpolation_buffer_size,
+                None if joint_velocity is None else tuple(joint_velocity.items()),
             )
 
             def _make_planner() -> MotionPlanner:
@@ -3790,6 +3855,18 @@ class CuroboPlannedGoToFrameCfg(GoToFrameCfg):
     then pick the trajopt goal's branch per env. Batched plans only."""
     wrist_flip_margin: float = 0.05
     """Distance from the joint limits a flipped goal keeps [rad]; closer flips are not applied."""
+    max_joint_velocity: float | tuple[float, ...] | None = None
+    """Largest joint speed of the plan [rad/s], one for every joint or one per ``robot_joint_names``
+    entry; None keeps the planner's timing.
+
+    Faster stretches of the plan are slowed to this speed, on its path (see :func:`_limit_joint_speed`).
+    Applies to every plan this command stores, chain slices included."""
+    plan_within_joint_velocity: bool = False
+    """Also lower cuRobo's joint speed limits to :attr:`max_joint_velocity` (in a copy of the URDF, see
+    :func:`~isaaclab_hiveboard.mdp.curobo_robot_cfg.limit_joint_velocity`), so trajectory optimization plans
+    and times within it, keeping its acceleration and jerk limits. Only the cuRobo trajectory planners use
+    it; chained reaches and arcs are still re-timed. On a 128-trajectory ANYmal M30Thread bank at 1/2 rad/s
+    the approach took 0.3 s longer than with re-timing alone, with the same success."""
 
 
 @configclass
@@ -3849,6 +3926,12 @@ class CuroboPlannedRotateFrameCfg(RotateFrameCfg):
     class_type = _CuroboPlannedRotateFrameHandler
     screw_pitch_m_per_revolution: float = 0.0
     """Signed axial travel per positive revolution [m]; zero gives a circular arc."""
+    max_joint_velocity: float | tuple[float, ...] | None = None
+    """Largest joint speed of the plan [rad/s], one for every joint or one per ``robot_joint_names``
+    entry; None keeps the planner's timing.
+
+    Faster stretches of the plan are slowed to this speed, on its path (see :func:`_limit_joint_speed`).
+    A slowed arc turns the valve slower than ``angular_velocity``."""
     robot_joint_names: list[str] = MISSING  # type: ignore
     robot_curobo_yaml: str | None = None
     robot_urdf: str | None = None

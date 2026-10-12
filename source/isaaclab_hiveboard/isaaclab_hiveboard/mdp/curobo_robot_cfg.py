@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -56,3 +60,37 @@ def load_curobo_robot_cfg(
         locks = kinematics.setdefault("lock_joints", {})
         locks.update(lock_joints)
     return payload
+
+
+def limit_joint_velocity(robot_cfg: dict[str, Any], max_joint_velocity: dict[str, float]) -> dict[str, Any]:
+    """Lower cuRobo's joint speed limits to ``max_joint_velocity`` [rad/s], by joint name.
+
+    cuRobo takes its speed limits from the URDF. This writes a copy of ``urdf_path`` with each named joint's
+    limit lowered to ``max_joint_velocity`` (never raised), in the system temp directory, and points
+    ``robot_cfg`` at it; mesh paths still resolve against the original ``asset_root_path``. Trajectory
+    optimization then plans and times the trajectory within the lower limits. Needs an absolute
+    ``urdf_path`` (pass ``urdf_path`` to :func:`load_curobo_robot_cfg`). Modifies and returns ``robot_cfg``.
+
+    ``cspace.velocity_scale`` is not used: cuRobo 0.8 applies it twice (``KinematicsLoader._update_joint_limits``
+    and ``CSpaceParams.scale_joint_limits``), so a scale of 0.25 gives a sixteenth of the URDF limit.
+    """
+    kinematics = robot_cfg["robot_cfg"]["kinematics"]
+    urdf_path = Path(kinematics["urdf_path"])
+    tree = ET.parse(urdf_path)
+    joints = {joint.get("name"): joint for joint in tree.getroot().iter("joint")}
+    for name, speed in max_joint_velocity.items():
+        limit = joints[name].find("limit") if name in joints else None
+        if limit is None or limit.get("velocity") is None:
+            raise ValueError(f"The cuRobo URDF has no velocity limit for {name}: {urdf_path}")
+        limit.set("velocity", repr(min(float(limit.get("velocity")), float(speed))))
+    text = ET.tostring(tree.getroot(), encoding="unicode")
+    digest = hashlib.sha1(text.encode()).hexdigest()[:12]
+    limited = Path(tempfile.gettempdir()) / "isaaclab_hiveboard_curobo" / f"{urdf_path.stem}_{digest}.urdf"
+    if not limited.is_file():
+        limited.parent.mkdir(parents=True, exist_ok=True)
+        partial = limited.with_suffix(f".{os.getpid()}.tmp")
+        partial.write_text(text)
+        partial.replace(limited)
+    kinematics.setdefault("asset_root_path", str(urdf_path.parent))
+    kinematics["urdf_path"] = str(limited)
+    return robot_cfg
