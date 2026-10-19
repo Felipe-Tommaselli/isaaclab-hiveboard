@@ -33,12 +33,10 @@ import contextlib
 import importlib.util
 import json
 import math
-import queue
 import sys
-import threading
 import time
 import traceback
-from concurrent.futures import Future
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -105,8 +103,7 @@ class CuroboPlanner:
         self.robot_cfg_module = load_module(assets / "curobo_robot_cfg.py", "hiveboard_curobo_robot_cfg")
         self.robot_yaml = robot_yaml
         self.urdf = urdf
-        self.base_cfg = self.robot_cfg_module.load_curobo_robot_cfg(robot_yaml, urdf)
-        kinematics = self.base_cfg["robot_cfg"]["kinematics"]
+        kinematics = self.robot_cfg_module.load_curobo_robot_cfg(robot_yaml, urdf)["robot_cfg"]["kinematics"]
         self.tool_frame = kinematics["tool_frames"][0]
         self.base_link = kinematics.get("base_link", "")
         self.joint_names = list(kinematics["cspace"]["joint_names"])
@@ -122,64 +119,62 @@ class CuroboPlanner:
             cfg = self.robot_cfg_module.limit_joint_velocity(cfg, dict(zip(self.joint_names, joint_velocity)))
         return cfg
 
-    def motion_planner(self, num_ik_seeds: int, num_trajopt_seeds: int, dt: float, buffer: int, joint_velocity):
-        """The MotionPlanner _plan_env builds, cached by its settings."""
-        key = ("planner", num_ik_seeds, num_trajopt_seeds, round(dt, 6), buffer, joint_velocity)
+    def _cached(self, key: tuple, build):
+        """Build a solver once per key, outside inference mode, and log how long it took."""
         if key not in self.cache:
             start = time.perf_counter()
             with torch.inference_mode(False):
-                self.cache[key] = MotionPlanner(
-                    MotionPlannerCfg.create(
-                        robot=self._robot_cfg(joint_velocity),
-                        self_collision_check=False,
-                        use_cuda_graph=True,
-                        num_ik_seeds=num_ik_seeds,
-                        num_trajopt_seeds=num_trajopt_seeds,
-                        interpolation_dt=dt,
-                        interpolation_buffer_size=buffer,
-                        device_cfg=DeviceCfg(),
-                    )
-                )
-            print(
-                f"[planner] built MotionPlanner {key} in {time.perf_counter() - start:.1f} s",
-                flush=True,
-            )
+                self.cache[key] = build()
+            print(f"[planner] built {key} in {time.perf_counter() - start:.1f} s", flush=True)
         return self.cache[key]
+
+    def motion_planner(self, num_ik_seeds: int, num_trajopt_seeds: int, dt: float, buffer: int, joint_velocity):
+        """The MotionPlanner _plan_env builds, cached by its settings."""
+        return self._cached(
+            ("planner", num_ik_seeds, num_trajopt_seeds, round(dt, 6), buffer, joint_velocity),
+            lambda: MotionPlanner(
+                MotionPlannerCfg.create(
+                    robot=self._robot_cfg(joint_velocity),
+                    self_collision_check=False,
+                    use_cuda_graph=True,
+                    num_ik_seeds=num_ik_seeds,
+                    num_trajopt_seeds=num_trajopt_seeds,
+                    interpolation_dt=dt,
+                    interpolation_buffer_size=buffer,
+                    device_cfg=DeviceCfg(),
+                )
+            ),
+        )
 
     def retargeter(self, num_ik_seeds: int, dt: float):
         """The MotionRetargeter the rotate handler builds, cached by its settings."""
-        key = ("retargeter", num_ik_seeds, round(dt, 6))
-        if key not in self.cache:
-            start = time.perf_counter()
-            with torch.inference_mode(False):
-                self.cache[key] = MotionRetargeter(
-                    MotionRetargeterCfg.create(
-                        robot=self._robot_cfg(None),
-                        tool_pose_criteria={
-                            self.tool_frame: ToolPoseCriteria.track_position_and_orientation(
-                                xyz=[1.0, 1.0, 1.0], rpy=[1.0, 1.0, 1.0], non_terminal_scale=1.0
-                            )
-                        },
-                        num_envs=1,
-                        use_mpc=False,
-                        self_collision_check=False,
-                        scene_model=None,
-                        load_collision_spheres=False,
-                        optimization_dt=dt,
-                        num_seeds_global=num_ik_seeds,
-                        num_seeds_local=1,
-                        position_tolerance=0.002,
-                        orientation_tolerance=0.02,
-                        device_cfg=DeviceCfg(),
-                    )
+        return self._cached(
+            ("retargeter", num_ik_seeds, round(dt, 6)),
+            lambda: MotionRetargeter(
+                MotionRetargeterCfg.create(
+                    robot=self._robot_cfg(None),
+                    tool_pose_criteria={
+                        self.tool_frame: ToolPoseCriteria.track_position_and_orientation(
+                            xyz=[1.0, 1.0, 1.0], rpy=[1.0, 1.0, 1.0], non_terminal_scale=1.0
+                        )
+                    },
+                    num_envs=1,
+                    use_mpc=False,
+                    self_collision_check=False,
+                    scene_model=None,
+                    load_collision_spheres=False,
+                    optimization_dt=dt,
+                    num_seeds_global=num_ik_seeds,
+                    num_seeds_local=1,
+                    position_tolerance=0.002,
+                    orientation_tolerance=0.02,
+                    device_cfg=DeviceCfg(),
                 )
-            print(
-                f"[planner] built MotionRetargeter {key} in {time.perf_counter() - start:.1f} s",
-                flush=True,
-            )
-        return self.cache[key]
+            ),
+        )
 
-    def _joint_state(self, joints: torch.Tensor):
+    def _joint_state(self, joints: torch.Tensor) -> JointState:
+        """cuRobo joint state for (T, 7) positions in fr3_joint1..7 order."""
         return JointState.from_position(joints.contiguous(), joint_names=self.joint_names)
 
     def fk(self, joints: torch.Tensor, kinematics=None) -> torch.Tensor:
@@ -189,6 +184,7 @@ class CuroboPlanner:
         return torch.cat((poses.position, xyzw(poses.quaternion)), dim=-1)
 
     def _tensor(self, values, width: int, name: str) -> torch.Tensor:
+        """Request field as float rows of `width` on the GPU, or ValueError."""
         tensor = torch.as_tensor(values, dtype=torch.float32, device=self.device)
         if tensor.ndim == 1:
             tensor = tensor[None]
@@ -196,11 +192,26 @@ class CuroboPlanner:
             raise ValueError(f"{name} must be finite rows of {width} numbers")
         return tensor
 
+    def info(self) -> dict:
+        """Joint names, frames and robot files, for GET /info."""
+        return {
+            "joint_names": self.joint_names,
+            "tool_frame": self.tool_frame,
+            "base_link": self.base_link,
+            "robot_yaml": str(self.robot_yaml),
+            "urdf": str(self.urdf),
+        }
+
+    def fk_request(self, request: dict) -> dict:
+        """fr3_hand poses for the request's `joints` rows, for POST /fk."""
+        return {"tool_poses": self.fk(self._tensor(request["joints"], 7, "joints")).tolist()}
+
     def plan_pose(self, request: dict) -> dict:
         """Joint trajectory from `start` to the fr3_hand pose `goal`, interpolated at `dt`."""
         start = self._tensor(request["start"], 7, "start")
         goal = self._tensor(request["goal"], 7, "goal")
         dt = float(request.get("dt", 0.02))
+        attempts = int(request.get("max_plan_attempts", 1))
         joint_velocity = request.get("max_joint_velocity")
         joint_velocity = tuple(float(v) for v in joint_velocity) if joint_velocity else None
         planner = self.motion_planner(
@@ -226,14 +237,14 @@ class CuroboPlanner:
             result = planner.plan_pose(
                 target,
                 current,
-                max_attempts=int(request.get("max_plan_attempts", 1)),
+                max_attempts=attempts,
                 enable_graph_attempt=99,
             )
         if result is None or not bool(result.success.all().item()):
             return {
                 "success": False,
-                "message": "no IK solution or trajectory within joint limits after {} attempt(s) "
-                "(goal unreachable, or start too close to a limit)".format(int(request.get("max_plan_attempts", 1))),
+                "message": f"no IK solution or trajectory within joint limits after {attempts} attempt(s) "
+                "(goal unreachable, or start too close to a limit)",
                 "solve_s": time.perf_counter() - solve_start,
             }
         trajectory = result.get_interpolated_plan().position
@@ -245,7 +256,7 @@ class CuroboPlanner:
         return {
             "success": True,
             "joints": joints.tolist(),
-            "tool_poses": self.fk(joints, planner).tolist(),
+            "tool_poses": self.fk(joints, planner.kinematics).tolist(),
             "solve_s": time.perf_counter() - solve_start,
         }
 
@@ -314,32 +325,8 @@ class CuroboPlanner:
         }
 
 
-class GpuWorker:
-    """Run every solver call on one thread; cuRobo's CUDA graphs are captured and replayed there."""
-
-    def __init__(self, planner: CuroboPlanner):
-        self.planner = planner
-        self.jobs: queue.Queue = queue.Queue()
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def _run(self) -> None:
-        while True:
-            function, argument, future = self.jobs.get()
-            try:
-                future.set_result(function(argument))
-            except Exception as exc:  # noqa: BLE001 - reported to the client
-                traceback.print_exc()
-                future.set_exception(exc)
-
-    def call(self, function, argument, timeout: float = 120.0):
-        """Run function(argument) on the GPU thread and wait for it."""
-        future: Future = Future()
-        self.jobs.put((function, argument, future))
-        return future.result(timeout=timeout)
-
-
 class Handler(BaseHTTPRequestHandler):
-    """JSON in, JSON out; shares the planner and worker through self.server."""
+    """JSON in, JSON out; reaches the planner and its GPU thread through self.server."""
 
     server: PlannerServer
 
@@ -356,17 +343,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/info":
             self._reply(404, {"error": f"unknown path {self.path}"})
             return
-        planner = self.server.worker.planner
-        self._reply(
-            200,
-            {
-                "joint_names": planner.joint_names,
-                "tool_frame": planner.tool_frame,
-                "base_link": planner.base_link,
-                "robot_yaml": str(planner.robot_yaml),
-                "urdf": str(planner.urdf),
-            },
-        )
+        self._reply(200, self.server.planner.info())
 
     def do_POST(self) -> None:
         """Dispatch a planning request to the GPU thread."""
@@ -377,10 +354,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             request = json.loads(self.rfile.read(length) or b"{}")
-            self._reply(200, self.server.worker.call(route, request))
+            self._reply(200, self.server.run(route, request))
         except (KeyError, ValueError, TypeError) as exc:
             self._reply(400, {"error": f"{type(exc).__name__}: {exc}"})
         except Exception as exc:  # noqa: BLE001 - keep serving
+            traceback.print_exc()
             self._reply(500, {"error": f"{type(exc).__name__}: {exc}"})
 
     def log_message(self, fmt, *args) -> None:
@@ -389,17 +367,22 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class PlannerServer(ThreadingHTTPServer):
-    """HTTP server that routes POST paths to planner calls run on one GpuWorker."""
+    """HTTP server that runs every planner call on one GPU thread, where cuRobo's CUDA graphs live."""
 
-    def __init__(self, address: tuple[str, int], worker: GpuWorker):
-        planner = worker.planner
-        self.worker = worker
-        self.routes = {
-            "/plan/pose": planner.plan_pose,
-            "/plan/arc": planner.plan_arc,
-            "/fk": lambda request: {"tool_poses": planner.fk(planner._tensor(request["joints"], 7, "joints")).tolist()},
-        }
+    def __init__(self, address: tuple[str, int], planner: CuroboPlanner):
+        self.planner = planner
+        self.gpu = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gpu")
+        self.routes = {"/plan/pose": planner.plan_pose, "/plan/arc": planner.plan_arc, "/fk": planner.fk_request}
         super().__init__(address, Handler)
+
+    def run(self, function, request: dict, timeout: float = 120.0) -> dict:
+        """function(request) on the GPU thread."""
+        return self.gpu.submit(function, request).result(timeout=timeout)
+
+    def server_close(self) -> None:
+        """Close the socket and drop queued plans."""
+        super().server_close()
+        self.gpu.shutdown(wait=False, cancel_futures=True)
 
 
 def main(argv=None) -> int:
@@ -421,19 +404,16 @@ def main(argv=None) -> int:
         (args.robot_yaml or cumotion / "fr3.yaml").resolve(),
         (args.urdf or cumotion / "fr3.urdf").resolve(),
     )
-    worker = GpuWorker(planner)
-    if args.warmup:
-        home = [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
-        pose = worker.call(lambda q: planner.fk(planner._tensor(q, 7, "q")).tolist()[0], home)
-        worker.call(planner.plan_pose, {"start": home, "goal": pose, "dt": args.dt})
-        worker.call(planner.plan_arc, {"start": home, "poses": [pose, pose], "dt": args.dt})
-    server = PlannerServer((args.host, args.port), worker)
-    print(
-        f"[planner] {planner.base_link} -> {planner.tool_frame} ({len(planner.joint_names)} joints) on http://{args.host}:{args.port}",
-        flush=True,
-    )
-    with contextlib.suppress(KeyboardInterrupt):
-        server.serve_forever()
+    with PlannerServer((args.host, args.port), planner) as server:
+        if args.warmup:
+            home = [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
+            pose = server.run(planner.fk_request, {"joints": [home]})["tool_poses"][0]
+            server.run(planner.plan_pose, {"start": home, "goal": pose, "dt": args.dt})
+            server.run(planner.plan_arc, {"start": home, "poses": [pose, pose], "dt": args.dt})
+        robot = f"{planner.base_link} -> {planner.tool_frame} ({len(planner.joint_names)} joints)"
+        print(f"[planner] {robot} on http://{args.host}:{args.port}", flush=True)
+        with contextlib.suppress(KeyboardInterrupt):
+            server.serve_forever()
     return 0
 
 
