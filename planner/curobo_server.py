@@ -338,62 +338,68 @@ class GpuWorker:
         return future.result(timeout=timeout)
 
 
-def make_handler(worker: GpuWorker):
-    """Request handler bound to one worker."""
-    planner = worker.planner
-    routes = {
-        "/plan/pose": planner.plan_pose,
-        "/plan/arc": planner.plan_arc,
-        "/fk": lambda request: {"tool_poses": planner.fk(planner._tensor(request["joints"], 7, "joints")).tolist()},
-    }
+class Handler(BaseHTTPRequestHandler):
+    """JSON in, JSON out; shares the planner and worker through self.server."""
 
-    class Handler(BaseHTTPRequestHandler):
-        """JSON in, JSON out."""
+    server: PlannerServer
 
-        def _reply(self, status: int, body: dict) -> None:
-            payload = json.dumps(body).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
+    def _reply(self, status: int, body: dict) -> None:
+        payload = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
-        def do_GET(self) -> None:
-            """Describe the loaded robot."""
-            if self.path != "/info":
-                self._reply(404, {"error": f"unknown path {self.path}"})
-                return
-            self._reply(
-                200,
-                {
-                    "joint_names": planner.joint_names,
-                    "tool_frame": planner.tool_frame,
-                    "base_link": planner.base_link,
-                    "robot_yaml": str(planner.robot_yaml),
-                    "urdf": str(planner.urdf),
-                },
-            )
+    def do_GET(self) -> None:
+        """Describe the loaded robot."""
+        if self.path != "/info":
+            self._reply(404, {"error": f"unknown path {self.path}"})
+            return
+        planner = self.server.worker.planner
+        self._reply(
+            200,
+            {
+                "joint_names": planner.joint_names,
+                "tool_frame": planner.tool_frame,
+                "base_link": planner.base_link,
+                "robot_yaml": str(planner.robot_yaml),
+                "urdf": str(planner.urdf),
+            },
+        )
 
-        def do_POST(self) -> None:
-            """Dispatch a planning request to the GPU thread."""
-            route = routes.get(self.path)
-            if route is None:
-                self._reply(404, {"error": f"unknown path {self.path}"})
-                return
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                request = json.loads(self.rfile.read(length) or b"{}")
-                self._reply(200, worker.call(route, request))
-            except (KeyError, ValueError, TypeError) as exc:
-                self._reply(400, {"error": f"{type(exc).__name__}: {exc}"})
-            except Exception as exc:  # noqa: BLE001 - keep serving
-                self._reply(500, {"error": f"{type(exc).__name__}: {exc}"})
+    def do_POST(self) -> None:
+        """Dispatch a planning request to the GPU thread."""
+        route = self.server.routes.get(self.path)
+        if route is None:
+            self._reply(404, {"error": f"unknown path {self.path}"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            request = json.loads(self.rfile.read(length) or b"{}")
+            self._reply(200, self.server.worker.call(route, request))
+        except (KeyError, ValueError, TypeError) as exc:
+            self._reply(400, {"error": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc:  # noqa: BLE001 - keep serving
+            self._reply(500, {"error": f"{type(exc).__name__}: {exc}"})
 
-        def log_message(self, fmt, *args) -> None:
-            """One line per request on stdout."""
-            print("[planner] " + fmt % args, flush=True)
+    def log_message(self, fmt, *args) -> None:
+        """One line per request on stdout."""
+        print("[planner] " + fmt % args, flush=True)
 
-    return Handler
+
+class PlannerServer(ThreadingHTTPServer):
+    """HTTP server that routes POST paths to planner calls run on one GpuWorker."""
+
+    def __init__(self, address: tuple[str, int], worker: GpuWorker):
+        planner = worker.planner
+        self.worker = worker
+        self.routes = {
+            "/plan/pose": planner.plan_pose,
+            "/plan/arc": planner.plan_arc,
+            "/fk": lambda request: {"tool_poses": planner.fk(planner._tensor(request["joints"], 7, "joints")).tolist()},
+        }
+        super().__init__(address, Handler)
 
 
 def main(argv=None) -> int:
@@ -421,7 +427,7 @@ def main(argv=None) -> int:
         pose = worker.call(lambda q: planner.fk(planner._tensor(q, 7, "q")).tolist()[0], home)
         worker.call(planner.plan_pose, {"start": home, "goal": pose, "dt": args.dt})
         worker.call(planner.plan_arc, {"start": home, "poses": [pose, pose], "dt": args.dt})
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(worker))
+    server = PlannerServer((args.host, args.port), worker)
     print(
         f"[planner] {planner.base_link} -> {planner.tool_frame} ({len(planner.joint_names)} joints) on http://{args.host}:{args.port}",
         flush=True,
