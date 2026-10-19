@@ -43,6 +43,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import torch
+import warp
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -108,10 +109,7 @@ class CuroboPlanner:
         self.device = torch.device("cuda")
         self.cache = {}
 
-        import warp
-
-        with contextlib.suppress(Exception):
-            warp.init()
+        warp.init()
 
     def _robot_cfg(self, joint_velocity):
         """Robot config, with the URDF joint speed limits lowered when asked."""
