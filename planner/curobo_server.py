@@ -45,6 +45,10 @@ from pathlib import Path
 import torch
 import warp
 
+from curobo.motion_planner import MotionPlanner, MotionPlannerCfg
+from curobo.motion_retargeter import MotionRetargeter, MotionRetargeterCfg, SequenceGoalToolPose
+from curobo.types import DeviceCfg, GoalToolPose, JointState, Pose, ToolPoseCriteria
+
 REPO = Path(__file__).resolve().parents[1]
 
 
@@ -122,9 +126,6 @@ class CuroboPlanner:
         """The MotionPlanner _plan_env builds, cached by its settings."""
         key = ("planner", num_ik_seeds, num_trajopt_seeds, round(dt, 6), buffer, joint_velocity)
         if key not in self.cache:
-            from curobo.motion_planner import MotionPlanner, MotionPlannerCfg
-            from curobo.types import DeviceCfg
-
             start = time.perf_counter()
             with torch.inference_mode(False):
                 self.cache[key] = MotionPlanner(
@@ -149,9 +150,6 @@ class CuroboPlanner:
         """The MotionRetargeter the rotate handler builds, cached by its settings."""
         key = ("retargeter", num_ik_seeds, round(dt, 6))
         if key not in self.cache:
-            from curobo.motion_retargeter import MotionRetargeter, MotionRetargeterCfg
-            from curobo.types import DeviceCfg, ToolPoseCriteria
-
             start = time.perf_counter()
             with torch.inference_mode(False):
                 self.cache[key] = MotionRetargeter(
@@ -182,8 +180,6 @@ class CuroboPlanner:
         return self.cache[key]
 
     def _joint_state(self, joints: torch.Tensor):
-        from curobo.types import JointState
-
         return JointState.from_position(joints.contiguous(), joint_names=self.joint_names)
 
     def fk(self, joints: torch.Tensor, kinematics=None) -> torch.Tensor:
@@ -202,8 +198,6 @@ class CuroboPlanner:
 
     def plan_pose(self, request: dict) -> dict:
         """Joint trajectory from `start` to the fr3_hand pose `goal`, interpolated at `dt`."""
-        from curobo.types import GoalToolPose, Pose
-
         start = self._tensor(request["start"], 7, "start")
         goal = self._tensor(request["goal"], 7, "goal")
         dt = float(request.get("dt", 0.02))
@@ -257,8 +251,6 @@ class CuroboPlanner:
 
     def plan_arc(self, request: dict) -> dict:
         """Joints that track the fr3_hand `poses` in order, seeded from `start` (pose 0 is the start)."""
-        from curobo.motion_retargeter import SequenceGoalToolPose
-
         start = self._tensor(request["start"], 7, "start")
         poses = self._tensor(request["poses"], 7, "poses")
         dt = float(request.get("dt", 0.02))
