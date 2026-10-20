@@ -22,6 +22,7 @@ def _resolve_asset_path(path: str | Path) -> Path:
 
     return path.resolve()
 
+
 def load_curobo_robot_cfg(
     yaml_path: str | Path,
     urdf_path: str | Path | None = None,
