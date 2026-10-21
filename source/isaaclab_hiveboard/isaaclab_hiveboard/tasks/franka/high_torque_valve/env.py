@@ -5,6 +5,8 @@
 
 """Franka Research 3 high-torque-valve task, retargeted from the ANYmal task of the same scene."""
 
+import math
+
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_hiveboard.mdp.commands.sequential_pose_command import CuroboPlannedRotateFrameCfg, GripperCommand
@@ -19,6 +21,9 @@ RELEASE_S = 0.4
 
 
 def _use_franka_high_torque_valve(env_cfg) -> None:
+    # The handwheel points along valve +Z. Align panel +X with that working
+    # axis before the floor adapter derives the valve's root transform.
+    env_cfg.scene.honeycomb.init_state.rot = (0.0, -math.sqrt(0.5), 0.0, math.sqrt(0.5))
     use_franka(env_cfg, "high_torque_valve", "reset_valve_root")
     # The shared sequence opens the hand during the retreat leg. The FR3 pads
     # open slower than the arm backs off, so they drag the light handwheel and
