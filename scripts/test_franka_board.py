@@ -78,6 +78,34 @@ def test_franka_configuration_does_not_change_other_robots(robot):
     assert before.events.reset_valve_root.params["pose_range"] == after.events.reset_valve_root.params["pose_range"]
 
 
+@pytest.mark.parametrize("task,axis", (("SmallValve", (0.0, -1.0, 0.0)), ("HighTorqueValve", (0.0, 0.0, 1.0))))
+@pytest.mark.parametrize("play", (False, True))
+def test_gate_valve_working_axes_point_upward(task, axis, play):
+    cfg = config("Franka", task, play)
+    obj = getattr(cfg.scene, TASKS[task]).init_state
+    rotation = torch.tensor([obj.rot], dtype=torch.float64)
+    working_axis = math_utils.quat_apply(rotation, torch.tensor([axis], dtype=torch.float64))
+    torch.testing.assert_close(working_axis, torch.tensor([[0.0, 0.0, 1.0]], dtype=torch.float64), atol=1e-7, rtol=0)
+
+
+@pytest.mark.parametrize("task,timeout", (("CircuitBreaker", 20.0), ("M8Thread", 75.0)))
+@pytest.mark.parametrize("play", (False, True))
+def test_franka_expert_timeouts_allow_complete_sequences(task, timeout, play):
+    assert config("Franka", task, play).episode_length_s == timeout
+
+
+@pytest.mark.parametrize("task", ("SmallValve", "HighTorqueValve", "CircuitBreaker", "M8Thread"))
+@pytest.mark.parametrize("robot", ("Anymal", "Spot"))
+def test_franka_fixes_preserve_other_robot_mounts_and_timeouts(task, robot):
+    before = config(robot, task)
+    config("Franka", task)
+    after = config(robot, task)
+    assert before.scene.honeycomb.init_state.to_dict() == after.scene.honeycomb.init_state.to_dict()
+    assert before.episode_length_s == after.episode_length_s
+    obj = TASKS[task]
+    assert getattr(before.scene, obj).init_state.to_dict() == getattr(after.scene, obj).init_state.to_dict()
+
+
 @pytest.mark.parametrize("ids", (torch.tensor([1]), slice(1, None), None))
 def test_drawer_reset_moves_housing_and_box_together_only_for_selected_environments(ids):
     class Scene(dict):
